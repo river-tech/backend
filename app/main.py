@@ -15,7 +15,7 @@ app = FastAPI(
 setup_cors(app)
 
 # Include routers
-app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
+app.include_router(auth_router)
 app.include_router(users_router, prefix=f"{settings.API_V1_STR}/users", tags=["users"])
 
 

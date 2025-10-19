@@ -143,15 +143,27 @@ class MessageResponse(BaseModel):
         }
 
 
+class RefreshTokenRequest(BaseModel):
+    """Refresh token request schema"""
+    refresh_token: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            }
+        }
+
+
 class ErrorResponse(BaseModel):
     """Error response schema"""
     error: str
-    detail: str
+    message: str
     
     class Config:
         json_schema_extra = {
             "example": {
                 "error": "Validation Error",
-                "detail": "Invalid email format"
+                "message": "Invalid email format"
             }
         }

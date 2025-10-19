@@ -19,14 +19,14 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     if db_user:
         raise HTTPException(
             status_code=400,
-            detail="Email already registered"
+            message="Email already registered"
         )
     
     db_user = db.query(User).filter(User.username == user.username).first()
     if db_user:
         raise HTTPException(
             status_code=400,
-            detail="Username already registered"
+            message="Username already registered"
         )
     
     # Create new user
@@ -53,7 +53,7 @@ def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 def read_user(user_id: int, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.id == user_id).first()
     if db_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, message="User not found")
     return db_user
 
 
@@ -61,7 +61,7 @@ def read_user(user_id: int, db: Session = Depends(get_db)):
 def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.id == user_id).first()
     if db_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, message="User not found")
     
     if user.email is not None:
         db_user.email = user.email
@@ -81,7 +81,7 @@ def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
 def delete_user(user_id: int, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.id == user_id).first()
     if db_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, message="User not found")
     
     db.delete(db_user)
     db.commit()

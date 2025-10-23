@@ -1,5 +1,6 @@
 from sqlalchemy import Column, String, Boolean, DateTime, UUID
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from app.db.database import Base
 import uuid
 
@@ -15,3 +16,10 @@ class User(Base):
     role = Column(String, default='USER', nullable=True)
     is_deleted = Column(Boolean, default=False, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    notifications = relationship("Notification", back_populates="user")
+    favorites = relationship("Favorite", back_populates="user")
+    comments = relationship("Comment", back_populates="user")
+    purchases = relationship("Purchase", back_populates="user")
+    wallet = relationship("Wallet", back_populates="user", uselist=False)

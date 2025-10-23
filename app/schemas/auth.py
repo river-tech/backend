@@ -107,40 +107,9 @@ class TokenResponse(BaseModel):
         }
 
 
-class UserResponse(BaseModel):
-    """User response schema"""
-    id: str
-    name: str
-    email: str
-    role: str
-    is_deleted: bool
-    created_at: datetime
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "id": "123e4567-e89b-12d3-a456-426614174000",
-                "name": "John Doe",
-                "email": "john.doe@example.com",
-                "role": "USER",
-                "is_deleted": False,
-                "created_at": "2024-01-15T10:30:00Z"
-            }
-        }
-
-
-class MessageResponse(BaseModel):
-    """Generic message response schema"""
-    message: str
-    success: bool
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "message": "Operation completed successfully",
-                "success": True
-            }
-        }
+# Import from other schema files to avoid duplication
+from .user import UserResponse
+from .admin import MessageResponse
 
 
 class RefreshTokenRequest(BaseModel):

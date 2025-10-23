@@ -1,43 +1,93 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
 
+class UserResponse(BaseModel):
+    id: str
+    name: str
+    email: str
+    role: str
+    is_deleted: bool
+    created_at: str
 
-class UserBase(BaseModel):
+class UserCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
     email: EmailStr
-    username: str
-    is_active: Optional[bool] = True
+    password: str = Field(..., min_length=6)
 
-
-class UserCreate(UserBase):
-    password: str
-
-
-class UserUpdate(BaseModel):
+class UserUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
     email: Optional[EmailStr] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    is_active: Optional[bool] = None
+    password: Optional[str] = Field(None, min_length=6)
 
+class UserProfileResponse(BaseModel):
+    id: str
+    name: str
+    email: str
+    role: str
+    avatar_url: Optional[str]
+    created_at: str
+    updated_at: str
 
-class UserInDB(UserBase):
-    id: int
-    is_superuser: bool
-    created_at: datetime
-    updated_at: Optional[datetime] = None
+class UserProfileUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    avatar_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=6)
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
 
-class User(UserInDB):
-    pass
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp_code: str
 
+class SetNewPasswordRequest(BaseModel):
+    email: EmailStr
+    otp_code: str
+    new_password: str = Field(..., min_length=6)
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
+# Admin User Management Schemas
+class UserSearchResponse(BaseModel):
+    id: str
+    avatar_url: Optional[str]
+    name: str
+    email: str
+    created_at: str
+    purchases_count: int
+    total_spent: float
+    status: str  # "Active" | "Banned"
 
+class UserDetailResponse(BaseModel):
+    id: str
+    avatar_url: Optional[str]
+    name: str
+    email: str
+    joined_at: str
+    status: str  # "Active" | "Banned"
+    total_purchases: int
+    total_spent: float
+    avg_order_value: float
+    purchase_history: list
 
-class TokenData(BaseModel):
-    username: Optional[str] = None
+class PurchaseHistoryItem(BaseModel):
+    workflow_id: str
+    workflow_title: str
+    price: float
+    status: str  # "Active" | "Expired"
+    purchased_at: str
+
+class UserBanRequest(BaseModel):
+    is_deleted: bool
+
+class UserOverviewResponse(BaseModel):
+    total_users: int
+    active_users: int
+    total_purchases: int
+    total_spent: float
+
+class UserSearchRequest(BaseModel):
+    name: Optional[str] = None
+    is_banned: Optional[bool] = None

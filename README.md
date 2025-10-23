@@ -1,101 +1,109 @@
-# USITech Backend
+# USITech Backend API
 
-FastAPI backend với PostgreSQL cho dự án USITech.
+## 📁 Cấu trúc dự án
 
-## Cài đặt
-
-### Sử dụng Docker (Khuyến nghị)
-
-1. Cài đặt Docker và Docker Compose
-2. Chạy lệnh:
-```bash
-docker-compose up --build
+```
+app/
+├── api/                    # API Routes
+│   ├── auth_router.py      # Authentication APIs
+│   ├── wallet_router.py    # Wallet APIs
+│   ├── workflows_router.py # Workflow APIs
+│   ├── orders_router.py    # Order APIs
+│   ├── users_router.py     # User APIs
+│   ├── categories_router.py # Category APIs
+│   ├── wishlist_router.py  # Wishlist APIs
+│   ├── notifications_router.py # Notification APIs
+│   ├── contact_router.py   # Contact APIs
+│   ├── admin_auth_router.py    # Admin Auth APIs
+│   ├── admin_users_router.py   # Admin User Management APIs
+│   └── admin_workflows_router.py # Admin Workflow Management APIs
+├── core/                   # Core Configuration
+│   ├── config.py          # App settings
+│   ├── cors.py            # CORS setup
+│   └── database.py         # Database connection
+├── models/                 # Database Models
+│   ├── user.py            # User model
+│   ├── workflow.py        # Workflow model
+│   ├── category.py        # Category model
+│   ├── wallet.py          # Wallet models
+│   ├── purchase.py        # Purchase model
+│   ├── invoice.py         # Invoice model
+│   └── enums.py           # Enum definitions
+├── schemas/                # Pydantic Schemas
+│   ├── admin.py           # Admin schemas
+│   ├── wallet.py          # Wallet schemas
+│   ├── workflow.py        # Workflow schemas
+│   ├── user.py            # User schemas
+│   └── order.py           # Order schemas
+├── services/              # Business Logic
+│   ├── auth_service.py    # Authentication service
+│   ├── wallet_service.py  # Wallet service
+│   ├── workflow_service.py # Workflow service
+│   ├── order_service.py   # Order service
+│   ├── user_service.py    # User service
+│   └── email_service.py   # Email service
+└── main.py                # FastAPI app entry point
 ```
 
-### Cài đặt thủ công
-
-1. Cài đặt Python 3.11+
-2. Cài đặt PostgreSQL
-3. Tạo database:
-```sql
-CREATE DATABASE usitech_db;
-CREATE USER usitech_user WITH PASSWORD 'usitech_password';
-GRANT ALL PRIVILEGES ON DATABASE usitech_db TO usitech_user;
-```
-
-4. Cài đặt dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-5. Tạo file .env từ env.example:
-```bash
-cp env.example .env
-```
-
-6. Chạy migrations:
-```bash
-alembic upgrade head
-```
-
-7. Chạy server:
-```bash
-uvicorn app.main:app --reload
-```
-
-## API Endpoints
-
-- **Base URL**: `http://localhost:8000`
-- **API Documentation**: `http://localhost:8000/api/v1/docs`
+## 🚀 API Endpoints
 
 ### Authentication
-- `POST /api/v1/auth/login` - Đăng nhập
-- `GET /api/v1/auth/me` - Thông tin user hiện tại
+- `POST /api/auth/register` - Đăng ký user
+- `POST /api/auth/login` - Đăng nhập
+- `POST /api/auth/logout` - Đăng xuất
+- `PUT /api/auth/change-password` - Đổi mật khẩu
 
-### Users
-- `POST /api/v1/users/` - Tạo user mới
-- `GET /api/v1/users/` - Lấy danh sách users
-- `GET /api/v1/users/{user_id}` - Lấy thông tin user
-- `PUT /api/v1/users/{user_id}` - Cập nhật user
-- `DELETE /api/v1/users/{user_id}` - Xóa user
+### Wallet
+- `GET /api/wallet/` - Thông tin ví
+- `GET /api/wallet/transactions` - Lịch sử giao dịch
+- `GET /api/wallet/last-bank-info` - Thông tin ngân hàng gần nhất
+- `POST /api/wallet/deposit` - Nạp tiền
+- `POST /api/wallet/orders/{workflow_id}` - Mua workflow bằng ví
 
-## Cấu trúc thư mục
+### Workflows
+- `GET /api/workflows/` - Danh sách workflows
+- `GET /api/workflows/{id}` - Chi tiết workflow
+- `POST /api/workflows/` - Tạo workflow (admin)
+- `PUT /api/workflows/{id}` - Cập nhật workflow (admin)
+- `DELETE /api/workflows/{id}` - Xóa workflow (admin)
 
-```
-backend/
-├── app/
-│   ├── api/           # API routes
-│   ├── core/          # Core configuration
-│   ├── db/            # Database configuration
-│   ├── models/        # SQLAlchemy models
-│   ├── schemas/       # Pydantic schemas
-│   ├── services/      # Business logic
-│   └── main.py        # FastAPI app
-├── alembic/           # Database migrations
-├── tests/             # Tests
-├── requirements.txt   # Python dependencies
-├── Dockerfile         # Docker configuration
-└── docker-compose.yml # Docker Compose setup
-```
+### Admin
+- `POST /api/admin/auth/login` - Đăng nhập admin
+- `GET /api/admin/users/` - Danh sách users
+- `PUT /api/admin/users/{id}` - Cập nhật user
+- `DELETE /api/admin/users/{id}` - Xóa user
 
-## Development
+## 🔧 Cài đặt
 
-### Chạy tests
 ```bash
-pytest
+# Tạo virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# hoặc
+venv\Scripts\activate    # Windows
+
+# Cài đặt dependencies
+pip install -r requirements.txt
+
+# Chạy server
+python run.py
 ```
 
-### Tạo migration mới
-```bash
-alembic revision --autogenerate -m "Description of changes"
-```
+## 📊 Database
 
-### Apply migrations
-```bash
-alembic upgrade head
-```
+- PostgreSQL
+- Alembic migrations
+- SQLAlchemy ORM
 
-### Rollback migration
-```bash
-alembic downgrade -1
-```
+## 🔐 Authentication
+
+- JWT tokens
+- Role-based access (USER/ADMIN)
+- Password hashing với SHA-256
+
+## 💰 Wallet System
+
+- Số dư ví
+- Lịch sử giao dịch
+- Nạp tiền qua banking
+- Mua workflow bằng ví

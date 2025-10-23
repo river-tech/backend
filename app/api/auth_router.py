@@ -6,8 +6,8 @@ from typing import Dict, Any
 import uuid
 from datetime import datetime, timedelta
 import jwt
-import hashlib
 import secrets
+import bcrypt
 
 from app.schemas.auth import (
     UserRegisterRequest,
@@ -20,7 +20,6 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
     MessageResponse,
-    ErrorResponse
 )
 from app.db.database import get_db
 from app.models.user import User
@@ -89,13 +88,15 @@ def verify_token(token: str) -> dict:
 
 
 def hash_password(password: str) -> str:
-    """Hash password using SHA-256"""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Hash password using bcrypt"""
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    """Verify password against hash"""
-    return hash_password(password) == hashed_password
+    """Verify password against bcrypt hash"""
+    return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 
 def generate_otp() -> str:
@@ -179,6 +180,24 @@ async def register_user(user_data: UserRegisterRequest, db: Session = Depends(ge
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
+        
+        # Create wallet for the new user with 0 balance (best-effort)
+        try:
+            from app.models.wallet import Wallet
+            wallet = Wallet(
+                id=str(uuid.uuid4()),
+                user_id=new_user.id,
+                balance=0.0,
+                total_deposited=0.0,
+                total_spent=0.0
+            )
+            db.add(wallet)
+            db.commit()
+            print(f"✅ Created wallet for new user: {new_user.email}")
+        except Exception as wallet_err:
+            db.rollback()
+            # Do not fail registration if wallet creation fails
+            print(f"⚠️  Could not create wallet for {new_user.email}: {wallet_err}")
         
         # Generate OTP for email verification
         otp_code = generate_otp()

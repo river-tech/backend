@@ -18,7 +18,8 @@ router = APIRouter()
 # Import schemas from schemas module
 from app.schemas.wallet import (
     WalletResponse, WalletTransactionResponse, DepositRequest, DepositResponse,
-    PurchaseWithWalletRequest, PurchaseWithWalletResponse, LastBankInfoResponse
+    PurchaseWithWalletRequest, PurchaseWithWalletResponse, LastBankInfoResponse,
+    AdminActivateDepositRequest, AdminActivateDepositResponse
 )
 
 # Helper function to get or create wallet
@@ -332,12 +333,7 @@ async def purchase_workflow_with_wallet(
             success=True,
             message="Workflow purchased successfully",
             wallet_balance=float(wallet.balance),
-            order={
-                "id": str(purchase.id),
-                "workflow_id": str(workflow_id),
-                "amount": float(purchase.amount),
-                "status": purchase.status
-            }
+            purchase_id=purchase.id
         )
         
     except HTTPException:
@@ -347,4 +343,62 @@ async def purchase_workflow_with_wallet(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to purchase workflow: {str(e)}"
+        )
+
+# Admin endpoint to activate deposit
+@router.post("/admin/activate-deposit", response_model=AdminActivateDepositResponse)
+async def admin_activate_deposit(
+    request: AdminActivateDepositRequest,
+    db: Session = Depends(get_db)
+):
+    """Admin endpoint to activate a pending deposit and add money to wallet"""
+    try:
+        # Find the pending deposit transaction
+        transaction = db.query(WalletTransaction).filter(
+            WalletTransaction.id == request.transaction_id,
+            WalletTransaction.transaction_type == TransactionType.DEPOSIT,
+            WalletTransaction.status == TransactionStatus.PENDING
+        ).first()
+        
+        if not transaction:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pending deposit transaction not found"
+            )
+        
+        # Get the wallet
+        wallet = db.query(Wallet).filter(Wallet.id == transaction.wallet_id).first()
+        if not wallet:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Wallet not found"
+            )
+        
+        # Update transaction status to SUCCESS
+        transaction.status = TransactionStatus.SUCCESS
+        transaction.note = f"{transaction.note} - Activated by admin"
+        
+        # Update wallet balance
+        wallet.balance += transaction.amount
+        wallet.total_deposited += transaction.amount
+        
+        db.commit()
+        db.refresh(wallet)
+        
+        return AdminActivateDepositResponse(
+            success=True,
+            message="Deposit activated successfully",
+            transaction_id=transaction.id,
+            user_id=wallet.user_id,
+            amount=float(transaction.amount),
+            new_wallet_balance=float(wallet.balance)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to activate deposit: {str(e)}"
         )

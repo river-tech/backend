@@ -9,16 +9,40 @@ class WorkflowResponse(BaseModel):
     title: str
     description: str
     price: float
-    status: str
-    features: List[str]
-    downloads_count: int
-    time_to_setup: Optional[int]
-    video_demo: Optional[str]
-    flow: Optional[Dict[str, Any]]
-    rating_avg: Optional[float]
-    created_at: str
-    updated_at: str
+    status: Optional[str] = "active"
+    features: List[str] = []
+    downloads_count: int = 0
+    wishlist_count: int = 0
+    time_to_setup: Optional[int] = None
+    video_demo: Optional[str] = None
+    flow: Optional[Dict[str, Any]] = None
+    rating_avg: Optional[float] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
     categories: List[str] = []
+    image_urls: List[str] = []
+    is_like: Optional[bool] = None
+    is_buy: Optional[bool] = None
+
+class WorkflowDetailResponse(BaseModel):
+    id: str
+    title: str
+    description: str
+    price: float
+    status: Optional[str] = "active"
+    features: List[str] = []
+    downloads_count: int = 0
+    wishlist_count: int = 0
+    time_to_setup: Optional[int] = None
+    video_demo: Optional[str] = None
+    flow: Optional[Dict[str, Any]] = None
+    rating_avg: Optional[float] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    categories: List[str] = []
+    image_urls: List[str] = []
+    is_like: Optional[bool] = None
+    is_buy: Optional[bool] = None
 
 class WorkflowCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
@@ -54,6 +78,20 @@ class CategoryCreateRequest(BaseModel):
 class CategoryUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     image_url: Optional[str] = None
+
+class ReviewCreateRequest(BaseModel):
+    rating: Optional[int] = Field(None, ge=1, le=5, description="Rating from 1 to 5 stars")
+    content: str = Field(..., min_length=1, max_length=1000, description="Review content")
+    parent_comment_id: Optional[UUID] = Field(None, description="Parent comment ID for replies")
+
+class ReviewResponse(BaseModel):
+    id: str
+    user: dict
+    rating: Optional[int] = None
+    comment: str
+    created_at: str
+    parent_comment_id: Optional[str] = None
+    is_me: bool = False
 
 class WorkflowCategoryResponse(BaseModel):
     id: str

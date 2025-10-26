@@ -11,7 +11,7 @@ class ContactRequest(BaseModel):
 class ContactResponse(BaseModel):
     id: str
     status: str
-    message: str
+    message: Optional[str] = None
 
 class ContactMessageResponse(BaseModel):
     id: str

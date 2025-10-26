@@ -34,6 +34,52 @@ class InvoiceResponse(BaseModel):
     workflow: dict
     amount: float
 
+class PurchaseResponse(BaseModel):
+    id: str
+    workflow_id: str
+    workflow_title: str
+    amount: float
+    status: str
+    payment_method: str
+    paid_at: str
+    created_at: str
+
+# Lấy danh sách purchases của user hiện tại
+@router.get("/my-purchases", response_model=List[PurchaseResponse])
+async def get_my_purchases(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all purchases of the current user"""
+    try:
+        purchases = db.query(Purchase)\
+            .join(Workflow)\
+            .filter(Purchase.user_id == current_user.id)\
+            .options(joinedload(Purchase.workflow))\
+            .order_by(Purchase.created_at.desc())\
+            .all()
+        
+        purchase_list = []
+        for purchase in purchases:
+            purchase_list.append(PurchaseResponse(
+                id=str(purchase.id),
+                workflow_id=str(purchase.workflow_id),
+                workflow_title=purchase.workflow.title,
+                amount=float(purchase.amount),
+                status=purchase.status,
+                payment_method=purchase.payment_method,
+                paid_at=purchase.paid_at.isoformat() if purchase.paid_at else None,
+                created_at=purchase.created_at.isoformat()
+            ))
+        
+        return purchase_list
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch purchases: {str(e)}"
+        )
+
+
 
 # Lấy hóa đơn chi tiết theo workflow_id (nếu user đã mua workflow đó)
 @router.get("/workflow/{workflow_id}/invoice", response_model=InvoiceResponse)

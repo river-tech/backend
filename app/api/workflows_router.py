@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi import APIRouter, HTTPException, Depends, status, Query, Header
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_
 from typing import List, Optional
@@ -11,40 +12,115 @@ from app.models import (
     Favorite, Comment, Purchase, Invoice, User
 )
 from app.schemas.workflow import (
-    WorkflowResponse, WorkflowCreateRequest, WorkflowUpdateRequest,
-    CategoryResponse, CategoryCreateRequest, CategoryUpdateRequest
+    WorkflowResponse, WorkflowDetailResponse, WorkflowCreateRequest, WorkflowUpdateRequest,
+    CategoryResponse, CategoryCreateRequest, CategoryUpdateRequest,
+    ReviewCreateRequest, ReviewResponse
 )
 from app.schemas.admin import MessageResponse
 from app.api.auth_router import get_current_user
+from fastapi import HTTPException, status
 
 router = APIRouter(prefix="/api/workflows", tags=["Workflows"])
+
+def get_optional_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """Get current user if authenticated, otherwise return None"""
+    if not credentials:
+        return None
+    
+    try:
+        # Decode JWT token manually to avoid exceptions from get_current_user
+        import jwt
+        from app.core.config import settings
+        
+        token = credentials.credentials
+        
+        # Decode token
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        user_id = payload.get("sub")
+        
+        if not user_id:
+            return None
+        
+        # Get user from database
+        user = db.query(User).filter(User.id == user_id).first()
+        return user
+        
+    except Exception:
+        # If any exception occurs, return None
+        return None
 
 
 @router.get("/", response_model=List[WorkflowResponse])
 async def get_workflows(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
-    """Get all published workflows (no query params)."""
+    """Get all published workflows. If authenticated, exclude purchased workflows."""
     try:
-        workflows = (
-            db.query(Workflow)
-            .filter(Workflow.status == "active")
-            .options(joinedload(Workflow.categories).joinedload(WorkflowCategory.category))
-            .all()
-        )
+        # Base query for active workflows
+        query = db.query(Workflow).filter(Workflow.status == "active")
+        
+        # If user is authenticated, exclude workflows they have purchased
+        if current_user:
+            # Get purchased workflow IDs
+            purchased_workflow_ids = db.query(Purchase.workflow_id)\
+                .filter(
+                    Purchase.user_id == current_user.id,
+                    Purchase.status == "ACTIVE"
+                )\
+                .subquery()
+            
+            # Exclude purchased workflows
+            query = query.filter(~Workflow.id.in_(purchased_workflow_ids))
+        
+        workflows = query.options(
+            joinedload(Workflow.categories).joinedload(WorkflowCategory.category),
+            joinedload(Workflow.assets),
+            joinedload(Workflow.favorites)
+        ).all()
         
         result = []
         for workflow in workflows:
             categories = [wc.category.name for wc in workflow.categories]
+            # Get image URLs from assets (filter by kind="image")
+            image_urls = [asset.asset_url for asset in workflow.assets if asset.kind == "image"]
+            
+            # Check if current user has liked/purchased this workflow (only if authenticated)
+            is_like = None
+            is_buy = None
+            
+            if current_user:
+                # Check if current user has liked this workflow
+                favorite = db.query(Favorite)\
+                    .filter(Favorite.workflow_id == workflow.id, Favorite.user_id == current_user.id)\
+                    .first()
+                is_like = favorite is not None
+                
+                # Since we filtered out purchased workflows, is_buy should always be false
+                is_buy = False
+            
             result.append(WorkflowResponse(
-                id=workflow.id,
+                id=str(workflow.id),
                 title=workflow.title,
                 description=workflow.description,
-                category=categories,
+                price=float(workflow.price),
+                status=workflow.status,
                 features=workflow.features or [],
+                downloads_count=workflow.downloads_count or 0,
+                wishlist_count=len(workflow.favorites),
+                time_to_setup=workflow.time_to_setup,
+                video_demo=workflow.video_demo,
+                flow=workflow.flow,
                 rating_avg=float(workflow.rating_avg) if workflow.rating_avg else None,
-                downloads_count=workflow.downloads_count,
-                price=float(workflow.price)
+                created_at=workflow.created_at.isoformat() if workflow.created_at else None,
+                updated_at=workflow.updated_at.isoformat() if workflow.updated_at else None,
+                categories=categories,
+                image_urls=image_urls,
+                is_like=is_like,
+                is_buy=is_buy
             ))
         
         return result
@@ -59,27 +135,44 @@ async def get_workflows(
 async def get_featured_workflows(
     db: Session = Depends(get_db)
 ):
-    """Get all featured workflows (rating >= 4.0). No query params."""
+    """Get top 10 featured workflows by downloads_count, then by rating_avg."""
     try:
         workflows = db.query(Workflow)\
             .filter(Workflow.status == "active")\
-            .filter(Workflow.rating_avg >= 4.0)\
-            .order_by(Workflow.downloads_count.desc())\
-            .options(joinedload(Workflow.categories).joinedload(WorkflowCategory.category))\
+            .order_by(Workflow.downloads_count.desc(), Workflow.rating_avg.desc())\
+            .options(
+                joinedload(Workflow.categories).joinedload(WorkflowCategory.category),
+                joinedload(Workflow.assets),
+                joinedload(Workflow.favorites)
+            )\
+            .limit(10)\
             .all()
         
         result = []
         for workflow in workflows:
             categories = [wc.category.name for wc in workflow.categories]
+            # Get image URLs from assets (filter by kind="image")
+            image_urls = [asset.asset_url for asset in workflow.assets if asset.kind == "image"]
+            
             result.append(WorkflowResponse(
-                id=workflow.id,
+                id=str(workflow.id),
                 title=workflow.title,
                 description=workflow.description,
-                category=categories,
+                price=float(workflow.price),
+                status=workflow.status,
                 features=workflow.features or [],
+                downloads_count=workflow.downloads_count or 0,
+                wishlist_count=len(workflow.favorites),
+                time_to_setup=workflow.time_to_setup,
+                video_demo=workflow.video_demo,
+                flow=workflow.flow,
                 rating_avg=float(workflow.rating_avg) if workflow.rating_avg else None,
-                downloads_count=workflow.downloads_count,
-                price=float(workflow.price)
+                created_at=workflow.created_at.isoformat() if workflow.created_at else None,
+                updated_at=workflow.updated_at.isoformat() if workflow.updated_at else None,
+                categories=categories,
+                image_urls=image_urls,
+                is_like=None,
+                is_buy=None
             ))
         
         return result
@@ -128,7 +221,7 @@ async def get_related_workflows(
                     thumbnail_url = image_assets[0].asset_url
             
             result.append({
-                "id": workflow.id,
+                "id": str(workflow.id),
                 "title": workflow.title,
                 "thumbnail_url": thumbnail_url,
                 "rating_avg": float(workflow.rating_avg) if workflow.rating_avg else None,
@@ -158,20 +251,40 @@ async def get_my_workflows(
                     Purchase.status == "ACTIVE"
                 )
             )\
-            .options(joinedload(Purchase.workflow))\
+            .options(
+                joinedload(Purchase.workflow).joinedload(Workflow.categories).joinedload(WorkflowCategory.category),
+                joinedload(Purchase.workflow).joinedload(Workflow.assets),
+                joinedload(Purchase.workflow).joinedload(Workflow.favorites)
+            )\
             .all()
         
         result = []
         for purchase in purchases:
+            workflow = purchase.workflow
+            
+            # Get categories and images for the workflow
+            categories = [wc.category.name for wc in workflow.categories]
+            image_urls = [asset.asset_url for asset in workflow.assets if asset.kind == "image"]
+            
             result.append(WorkflowResponse(
-                id=purchase.id,
-                workflow={
-                    "id": purchase.workflow.id,
-                    "title": purchase.workflow.title
-                },
-                purchase_date=purchase.paid_at or purchase.created_at,
-                price=float(purchase.amount),
-                status="Active" if purchase.status == "ACTIVE" else "Expired"
+                id=str(workflow.id),
+                title=workflow.title,
+                description=workflow.description,
+                price=float(workflow.price),
+                status=workflow.status,
+                features=workflow.features or [],
+                downloads_count=workflow.downloads_count or 0,
+                wishlist_count=len(workflow.favorites),
+                time_to_setup=workflow.time_to_setup,
+                video_demo=workflow.video_demo,
+                flow=workflow.flow,
+                rating_avg=float(workflow.rating_avg) if workflow.rating_avg else None,
+                created_at=workflow.created_at.isoformat() if workflow.created_at else None,
+                updated_at=workflow.updated_at.isoformat() if workflow.updated_at else None,
+                categories=categories,
+                image_urls=image_urls,
+                is_like=None,
+                is_buy=None
             ))
         
         return result
@@ -182,10 +295,11 @@ async def get_my_workflows(
         )
 
 
-@router.get("/{workflow_id}", response_model=WorkflowResponse)
+@router.get("/{workflow_id}", response_model=WorkflowDetailResponse)
 async def get_workflow_detail(
     workflow_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
     """Get detailed information of a workflow"""
     try:
@@ -214,8 +328,31 @@ async def get_workflow_detail(
         wishlist_count = db.query(func.count(Favorite.id))\
             .filter(Favorite.workflow_id == workflow_id).scalar() or 0
         
-        return WorkflowResponse(
-            id=workflow.id,
+        # Check if current user has liked/purchased this workflow (only if authenticated)
+        is_like = None
+        is_buy = None
+        
+        if current_user:
+            # For testing, set to false when user is authenticated
+            is_like = False
+            is_buy = False
+            
+            # Check if current user has liked this workflow
+            favorite = db.query(Favorite)\
+                .filter(Favorite.workflow_id == workflow_id, Favorite.user_id == current_user.id)\
+                .first()
+            if favorite:
+                is_like = True
+            
+            # Check if current user has purchased this workflow
+            purchase = db.query(Purchase)\
+                .filter(Purchase.workflow_id == workflow_id, Purchase.user_id == current_user.id)\
+                .first()
+            if purchase:
+                is_buy = True
+        
+        return WorkflowDetailResponse(
+            id=str(workflow.id),
             title=workflow.title,
             description=workflow.description,
             category=categories,
@@ -226,7 +363,9 @@ async def get_workflow_detail(
             downloads_count=workflow.downloads_count,
             wishlist_count=wishlist_count,
             price=float(workflow.price),
-            time_to_setup=workflow.time_to_setup
+            time_to_setup=workflow.time_to_setup,
+            is_like=is_like,
+            is_buy=is_buy
         )
     except HTTPException:
         raise
@@ -255,21 +394,38 @@ async def search_workflows(
                     )
                 )
             )\
-            .options(joinedload(Workflow.categories).joinedload(WorkflowCategory.category))\
+            .options(
+                joinedload(Workflow.categories).joinedload(WorkflowCategory.category),
+                joinedload(Workflow.assets),
+                joinedload(Workflow.favorites)
+            )\
             .all()
         
         result = []
         for workflow in workflows:
             categories = [wc.category.name for wc in workflow.categories]
+            # Get image URLs from assets (filter by kind="image")
+            image_urls = [asset.asset_url for asset in workflow.assets if asset.kind == "image"]
+            
             result.append(WorkflowResponse(
-                id=workflow.id,
+                id=str(workflow.id),
                 title=workflow.title,
                 description=workflow.description,
-                category=categories,
+                price=float(workflow.price),
+                status=workflow.status,
                 features=workflow.features or [],
+                downloads_count=workflow.downloads_count or 0,
+                wishlist_count=len(workflow.favorites),
+                time_to_setup=workflow.time_to_setup,
+                video_demo=workflow.video_demo,
+                flow=workflow.flow,
                 rating_avg=float(workflow.rating_avg) if workflow.rating_avg else None,
-                downloads_count=workflow.downloads_count,
-                price=float(workflow.price)
+                created_at=workflow.created_at.isoformat() if workflow.created_at else None,
+                updated_at=workflow.updated_at.isoformat() if workflow.updated_at else None,
+                categories=categories,
+                image_urls=image_urls,
+                is_like=None,
+                is_buy=None
             ))
         
         return result
@@ -369,7 +525,7 @@ async def remove_from_wishlist(
 @router.post("/{workflow_id}/reviews", response_model=MessageResponse)
 async def create_review(
     workflow_id: UUID,
-    review_data: dict,
+    review_data: ReviewCreateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -389,16 +545,17 @@ async def create_review(
             user_id=current_user.id,
             rating=review_data.rating,
             parent_comment_id=review_data.parent_comment_id,
-            content=review_data.comment
+            content=review_data.content
         )
         db.add(review)
         db.commit()
         
-        # Update workflow rating average
-        avg_rating = db.query(func.avg(Comment.rating))\
-            .filter(Comment.workflow_id == workflow_id).scalar()
-        workflow.rating_avg = avg_rating
-        db.commit()
+        # Update workflow rating average only if rating is provided
+        if review_data.rating is not None:
+            avg_rating = db.query(func.avg(Comment.rating))\
+                .filter(Comment.workflow_id == workflow_id, Comment.rating.isnot(None)).scalar()
+            workflow.rating_avg = avg_rating
+            db.commit()
         
         return MessageResponse(success=True, message="Review added successfully")
     except HTTPException:
@@ -456,12 +613,13 @@ async def delete_review(
         )
 
 
-@router.get("/{workflow_id}/reviews", response_model=List[WorkflowResponse])
+@router.get("/{workflow_id}/reviews", response_model=List[ReviewResponse])
 async def get_workflow_reviews(
     workflow_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
-    """Get list of reviews for a workflow"""
+    """Get list of reviews for a workflow (with optional authentication)"""
     try:
         reviews = db.query(Comment)\
             .join(User)\
@@ -471,17 +629,60 @@ async def get_workflow_reviews(
         
         result = []
         for review in reviews:
-            result.append({
-                "id": str(review.id),
-                "user": {
+            # Check if this review belongs to current user
+            is_me = current_user is not None and str(review.user_id) == str(current_user.id)
+            
+            result.append(ReviewResponse(
+                id=str(review.id),
+                user={
                     "name": review.user.name,
                     "avatar_url": review.user.avatar_url
                 },
-                "rating": review.rating,
-                "comment": review.content,
-                "created_at": review.created_at,
-                "parent_comment_id": str(review.parent_comment_id) if review.parent_comment_id else None
-            })
+                rating=review.rating,
+                comment=review.content,
+                created_at=review.created_at.isoformat(),
+                parent_comment_id=str(review.parent_comment_id) if review.parent_comment_id else None,
+                is_me=is_me
+            ))
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch workflow reviews: {str(e)}"
+        )
+
+@router.get("/{workflow_id}/reviews/me", response_model=List[ReviewResponse])
+async def get_workflow_reviews_with_auth(
+    workflow_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get list of reviews for a workflow with authentication (shows is_me correctly)"""
+    try:
+        reviews = db.query(Comment)\
+            .join(User)\
+            .filter(Comment.workflow_id == workflow_id)\
+            .options(joinedload(Comment.user))\
+            .all()
+        
+        result = []
+        for review in reviews:
+            # Check if this review belongs to current user
+            is_me = str(review.user_id) == str(current_user.id)
+            
+            result.append(ReviewResponse(
+                id=str(review.id),
+                user={
+                    "name": review.user.name,
+                    "avatar_url": review.user.avatar_url
+                },
+                rating=review.rating,
+                comment=review.content,
+                created_at=review.created_at.isoformat(),
+                parent_comment_id=str(review.parent_comment_id) if review.parent_comment_id else None,
+                is_me=is_me
+            ))
         
         return result
     except Exception as e:
@@ -518,7 +719,8 @@ async def get_workflow_full_detail(
         workflow = db.query(Workflow)\
             .options(
                 joinedload(Workflow.categories).joinedload(WorkflowCategory.category),
-                joinedload(Workflow.assets)
+                joinedload(Workflow.assets),
+                joinedload(Workflow.favorites)
             )\
             .filter(Workflow.id == workflow_id).first()
         
@@ -532,7 +734,7 @@ async def get_workflow_full_detail(
         document_assets = [asset.asset_url for asset in workflow.assets if asset.kind == "doc"]
         
         return WorkflowResponse(
-            id=workflow.id,
+            id=str(workflow.id),
             title=workflow.title,
             category=categories,
             status=workflow.status,

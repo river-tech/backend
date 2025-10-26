@@ -63,3 +63,14 @@ class PurchaseWithWalletResponse(BaseModel):
 class LastBankInfoResponse(BaseModel):
     bank_name: Optional[str]
     bank_account: Optional[str]
+
+class AdminActivateDepositRequest(BaseModel):
+    transaction_id: UUID = Field(..., description="Transaction ID to activate")
+
+class AdminActivateDepositResponse(BaseModel):
+    success: bool
+    message: str
+    transaction_id: UUID
+    user_id: UUID
+    amount: float
+    new_wallet_balance: float

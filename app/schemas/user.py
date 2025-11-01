@@ -58,7 +58,7 @@ class UserSearchResponse(BaseModel):
     created_at: str
     purchases_count: int
     total_spent: float
-    status: str  # "Active" | "Banned"
+    is_banned: bool
 
 class UserDetailResponse(BaseModel):
     id: str

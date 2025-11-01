@@ -55,7 +55,7 @@ class DeleteAdminResponse(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     currentPassword: str
-    newPassword: str = Field(..., min_length=6)
+    newPassword: str
 
 class ChangePasswordResponse(BaseModel):
     success: bool

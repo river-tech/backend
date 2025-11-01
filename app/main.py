@@ -15,6 +15,7 @@ from app.api.admin_workflows_router import router as admin_workflows_router
 from app.api.admin_purchases_router import router as admin_purchases_router
 from app.api.admin_notifications_router import router as admin_notifications_router
 from app.api.admin_categories_router import router as admin_categories_router
+from app.api.admin_wallet_router import router as admin_wallet_router
 from app.api.wallet_router import router as wallet_router
 
 app = FastAPI(
@@ -43,6 +44,7 @@ app.include_router(admin_workflows_router, tags=["Admin - Workflow Management"])
 app.include_router(admin_purchases_router, tags=["Admin - Purchase Management"])
 app.include_router(admin_notifications_router, tags=["Admin - Notifications"])
 app.include_router(admin_categories_router, tags=["Admin - Categories"])
+app.include_router(admin_wallet_router, tags=["Admin - Wallet"])
 
 
 @app.get("/")

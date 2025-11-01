@@ -119,11 +119,11 @@ class WorkflowAssetUpdateRequest(BaseModel):
 class AdminWorkflowListResponse(BaseModel):
     id: str
     title: str
+    categories: List[str]
     price: float
-    status: str
-    downloads_count: int
     sales_count: int
-    revenue: float
+    created_at: str
+    status: str
 
 class AdminWorkflowListRequest(BaseModel):
     search: Optional[str] = None
@@ -143,10 +143,14 @@ class AdminWorkflowDetailResponse(BaseModel):
     title: str
     description: str
     price: float
+    rating: Optional[float] = None
     features: List[str]
     time_to_setup: Optional[int]
     video_demo: Optional[str]
     flow: Optional[Dict[str, Any]]
+    status: str
+    created_at: Optional[str]
+    sales_count: int
     categories: List[dict]
     assets: List[dict]
 

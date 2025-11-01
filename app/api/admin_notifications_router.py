@@ -42,25 +42,15 @@ async def get_current_admin(current_user: User = Depends(get_current_user)):
 
 @router.get("/")
 async def get_admin_notifications(
-    type: Optional[str] = Query(None),
-    is_unread: Optional[bool] = Query(None),
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    """Get admin notifications filtered by type and is_unread. No pagination."""
+    """Get all notifications for the current admin. Respond with array, not object."""
     try:
-        # Base query for admin notifications
-        query = db.query(Notification).filter(Notification.user_id == current_admin.id)
-        
-        # Apply filters
-        if type and type.strip():
-            query = query.filter(Notification.type == type.strip())
-        
-        if is_unread is not None:
-            query = query.filter(Notification.is_unread == is_unread)
-        notifications = query.all()
-        
-        # Build response
+        notifications = db.query(Notification).filter(
+            Notification.user_id == current_admin.id
+        ).all()
+
         notifications_data = []
         for notification in notifications:
             notifications_data.append({
@@ -70,12 +60,83 @@ async def get_admin_notifications(
                 "type": notification.type,
                 "is_unread": notification.is_unread
             })
-        return {"notifications": notifications_data}
-        
+        return notifications_data
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch notifications: {str(e)}"
+        )
+
+class AdminNotificationRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    message: str = Field(..., min_length=1, max_length=1000)
+    type: str = Field(..., pattern="^(SUCCESS|WARNING|ERROR)$")
+
+class AdminNotificationResponse(BaseModel):
+    success: bool
+    message: str
+
+@router.post("/self", response_model=AdminNotificationResponse)
+async def create_notification_for_current_admin(
+    request: AdminNotificationRequest,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Create a notification for the current admin."""
+    try:
+        notification = Notification(
+            id=uuid.uuid4(),
+            user_id=current_admin.id,
+            title=request.title,
+            message=request.message,
+            type=request.type,
+            is_unread=True
+        )
+        db.add(notification)
+        db.commit()
+
+        return AdminNotificationResponse(success=True, message="Notification created for current admin")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create admin notification: {str(e)}"
+        )
+
+@router.post("/admins/broadcast", response_model=NotificationBroadcastResponse)
+async def broadcast_notification_to_all_admins(
+    request: NotificationBroadcastRequest,
+    db: Session = Depends(get_db)
+):
+    """Broadcast a notification to all admin users (no authentication required)."""
+    try:
+        admins = db.query(User).filter(User.role == "ADMIN").all()
+
+        notifications_created = 0
+        for admin in admins:
+            notification = Notification(
+                id=uuid.uuid4(),
+                user_id=admin.id,
+                title=request.title,
+                message=request.message,
+                type=request.type,
+                is_unread=True
+            )
+            db.add(notification)
+            notifications_created += 1
+
+        db.commit()
+
+        return NotificationBroadcastResponse(
+            success=True,
+            message=f"Notification broadcasted successfully to {notifications_created} admins"
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to broadcast to admins: {str(e)}"
         )
 
 @router.post("/", response_model=NotificationCreateResponse)

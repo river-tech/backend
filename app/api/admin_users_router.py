@@ -31,6 +31,42 @@ async def get_current_admin(current_user: User = Depends(get_current_user)):
 
 router = APIRouter(prefix="/api/admin/users", tags=["Admin - User Management"])
 
+@router.get("/", response_model=List[UserSearchResponse])
+async def get_all_users(
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all users (no filters)."""
+    try:
+        users = db.query(User).filter(User.role == "USER").all()
+
+        result: List[UserSearchResponse] = []
+        for user in users:
+            purchases = db.query(Purchase).filter(
+                Purchase.user_id == user.id,
+                Purchase.status == "ACTIVE"
+            ).all()
+
+            total_spent = sum(float(p.workflow.price) for p in purchases)
+
+            result.append(UserSearchResponse(
+                id=str(user.id),
+                avatar_url=user.avatar_url,
+                name=user.name,
+                email=user.email,
+                created_at=user.created_at.isoformat() if user.created_at else "",
+                purchases_count=len(purchases),
+                total_spent=total_spent,
+                is_banned=bool(user.is_deleted)
+            ))
+
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch users: {str(e)}"
+        )
+
 @router.get("/overview", response_model=UserOverviewResponse)
 async def get_users_overview(
     current_admin: User = Depends(get_current_admin),
@@ -74,7 +110,7 @@ async def get_users_overview(
 
 @router.post("/search", response_model=List[UserSearchResponse])
 async def search_users(
-    search_data: UserSearchRequest,
+    search_data: Optional[UserSearchRequest] = None,
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
@@ -83,13 +119,14 @@ async def search_users(
         # Base query for users (exclude admins)
         query = db.query(User).filter(User.role == "USER")
         
-        # Filter by name if provided
-        if search_data.name and search_data.name.strip():
-            query = query.filter(User.name.ilike(f"%{search_data.name.strip()}%"))
-        
-        # Filter by banned status if provided
-        if search_data.is_banned is not None:
-            query = query.filter(User.is_deleted == search_data.is_banned)
+        if search_data:
+            # Filter by name if provided
+            if search_data.name and search_data.name.strip():
+                query = query.filter(User.name.ilike(f"%{search_data.name.strip()}%"))
+            
+            # Filter by banned status if provided
+            if search_data.is_banned is not None:
+                query = query.filter(User.is_deleted == search_data.is_banned)
         
         users = query.all()
         
@@ -111,7 +148,7 @@ async def search_users(
                 created_at=user.created_at.isoformat() if user.created_at else "",
                 purchases_count=len(purchases),
                 total_spent=total_spent,
-                status="Banned" if user.is_deleted else "Active"
+                is_banned=bool(user.is_deleted)
             ))
         
         return result

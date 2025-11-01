@@ -74,3 +74,14 @@ class AdminActivateDepositResponse(BaseModel):
     user_id: UUID
     amount: float
     new_wallet_balance: float
+
+class DepositOverviewResponse(BaseModel):
+    total: int
+    total_amount: float
+    completed: int
+    pending: int
+    rejected: int
+
+class MessageResponse(BaseModel):
+    success: bool
+    message: str

@@ -36,8 +36,7 @@
 ### 6. Get All Workflows
 - **GET** `/api/admin/workflows`
 - **Headers**: `Authorization: Bearer <token>`
-- **Query**: `?search=&status=&category=&page=&limit=`
-- **Response**: `{ "workflows": [...], "pagination": {...} }`
+- **Response**: `[ { "id": uuid, "title": string, "status": string, "price": number, "created_at": datetime } ]`
 
 ### 7. Get Workflow Overview
 - **GET** `/api/admin/workflows/overview`
@@ -117,40 +116,155 @@
 ### 20. Get Admin Notifications
 - **GET** `/api/admin/notifications`
 - **Headers**: `Authorization: Bearer <token>`
-- **Query**: `?type=&is_unread=`
-- **Response**: `[{ "id": uuid, "title": string, "message": string, "type": string, "is_unread": boolean }]`
+- **Response**:
+```json
+{
+  "notifications": [
+    {
+      "id": "uuid",
+      "title": "string",
+      "message": "string",
+      "type": "SUCCESS | WARNING | ERROR",
+      "is_unread": true
+    }
+  ]
+}
+```
+
+---
 
 ### 21. Create Notification
 - **POST** `/api/admin/notifications`
 - **Headers**: `Authorization: Bearer <token>`
-- **Body**: `{ "user_id": uuid, "title": string, "message": string, "type": "SUCCESS|WARNING|ERROR" }`
-- **Response**: `{ "success": true, "message": string }`
+- **Body**:
+```json
+{
+  "user_id": "uuid",
+  "title": "string",
+  "message": "string",
+  "type": "SUCCESS | WARNING | ERROR"
+}
+```
+- **Response**:
+```json
+{
+  "success": true,
+  "message": "Notification created successfully",
+  "notification_id": "uuid"
+}
+```
+
+---
 
 ### 22. Broadcast Notification to All Users
 - **POST** `/api/admin/notifications/broadcast`
 - **Headers**: `Authorization: Bearer <token>`
-- **Body**: `{ "title": string, "message": string, "type": "SUCCESS|WARNING|ERROR" }`
-- **Response**: `{ "success": true, "message": string }`
+- **Body**:
+```json
+{
+  "title": "string",
+  "message": "string",
+  "type": "SUCCESS | WARNING | ERROR"
+}
+```
+- **Response**:
+```json
+{
+  "success": true,
+  "message": "Notification broadcast to all users"
+}
+```
+
+---
+
+### 22a. Create Notification for Current Admin
+- **POST** `/api/admin/notifications/self`
+- **Headers**: `Authorization: Bearer <token>`
+- **Body**:
+```json
+{
+  "title": "string",
+  "message": "string",
+  "type": "SUCCESS | WARNING | ERROR"
+}
+```
+- **Response**:
+```json
+{ "success": true, "message": "Notification created for current admin" }
+```
+
+---
+
+### 22b. Broadcast Notification to All Admins
+- **POST** `/api/admin/notifications/admins/broadcast`
+- **Headers**: `Authorization: Bearer <token>`
+- **Body**:
+```json
+{
+  "title": "string",
+  "message": "string",
+  "type": "SUCCESS | WARNING | ERROR"
+}
+```
+- **Response**:
+```json
+{ "success": true, "message": "Notification broadcasted successfully to X admins" }
+```
 
 ### 23. Mark Notification as Read
 - **PATCH** `/api/admin/notifications/{notification_id}/read`
 - **Headers**: `Authorization: Bearer <token>`
-- **Response**: `{ "success": true, "message": "Notification marked as read" }`
+- **Path Params**:
+  - `notification_id` (uuid): ID của thông báo cần đánh dấu đã đọc
+- **Response**:
+```json
+{
+  "success": true,
+  "message": "Notification marked as read"
+}
+```
+
+---
 
 ### 24. Mark All Notifications as Read
 - **PATCH** `/api/admin/notifications/read-all`
 - **Headers**: `Authorization: Bearer <token>`
-- **Response**: `{ "success": true, "message": "All notifications marked as read" }`
+- **Response**:
+```json
+{
+  "success": true,
+  "message": "All notifications marked as read"
+}
+```
+
+---
 
 ### 25. Delete Notification
 - **DELETE** `/api/admin/notifications/{notification_id}`
 - **Headers**: `Authorization: Bearer <token>`
-- **Response**: `{ "success": true }`
+- **Path Params**:
+  - `notification_id` (uuid): ID của thông báo cần xóa
+- **Response**:
+```json
+{
+  "success": true,
+  "message": "Notification deleted successfully"
+}
+```
+
+---
 
 ### 26. Delete All Notifications
 - **DELETE** `/api/admin/notifications/all`
 - **Headers**: `Authorization: Bearer <token>`
-- **Response**: `{ "success": true, "deleted_count": int }`
+- **Response**:
+```json
+{
+  "success": true,
+  "deleted_count": 42
+}
+```
+
 
 ## Category Management APIs
 
@@ -174,14 +288,14 @@
 
 ### 30. Get All Admins
 - **GET** `/api/admin/settings/admins`
-- **Headers**: `Authorization: Bearer <token>`
-- **Response**: `[{ "id": uuid, "name": string, "email": string, "created_at": datetime }]`
+- **Headers**: `Authorization: Bearer <admin token>`
+- **Response**: `[{ "id": string, "name": string, "email": string, "role": "ADMIN", "created_at": string ISO8601 }]`
 
 ### 31. Create Admin
 - **POST** `/api/admin/settings/admins`
-- **Headers**: `Authorization: Bearer <token>`
-- **Body**: `{ "name": string, "email": string, "password": string }`
-- **Response**: `{ "success": true, "message": "Admin created successfully" }`
+- **Headers**: `Authorization: Bearer <admin token>`
+- **Body**: `{ "name": string, "email": string, "password": string (>= 6) }`
+- **Response**: `{ "id": string, "success": true, "message": "Admin created successfully" }`
 
 ### 32. Update Admin
 - **PUT** `/api/admin/settings/admins/{admin_id}`
@@ -191,8 +305,13 @@
 
 ### 33. Delete Admin
 - **DELETE** `/api/admin/settings/admins/{admin_id}`
-- **Headers**: `Authorization: Bearer <token>`
-- **Response**: `{ "success": true, "message": "Admin deleted successfully" }`
+- **Headers**: `Authorization: Bearer <admin token>`
+- **Body**: `{ "adminPassword": string }` (mật khẩu của admin đang đăng nhập để xác nhận)
+- **Responses**:
+  - 200: `{ "success": true, "message": "Admin deleted successfully" }`
+  - 400: `{ "detail": "Cannot delete your own account" }`
+  - 401: `{ "detail": "Invalid admin password" }`
+  - 404: `{ "detail": "Admin not found" }`
 
 ### 34. Get System Statistics
 - **GET** `/api/admin/settings/statistics`
@@ -204,3 +323,50 @@
 - **Headers**: `Authorization: Bearer <token>`
 - **Body**: `{ "site_name": string, "site_description": string, "maintenance_mode": boolean }`
 - **Response**: `{ "success": true, "message": "Settings updated successfully" }`
+
+### 36. Get Admin Profile
+- **GET** `/api/admin/profile`
+- **Headers**: `Authorization: Bearer <admin token>`
+- **Response**: `{ "id": string, "name": string, "email": string, "role": "ADMIN", "created_at": string ISO8601 }`
+
+### 37. Update Admin Profile
+- **PUT** `/api/admin/profile`
+- **Headers**: `Authorization: Bearer <admin token>`
+- **Body**: `{ "name": string }`
+- **Response**: `{ "id": string, "name": string, "email": string, "role": "ADMIN", "created_at": string ISO8601 }`
+
+### 38. Change Admin Password
+- **PATCH** `/api/admin/settings/password`
+- **Headers**: `Authorization: Bearer <admin token>`
+- **Body**: `{ "currentPassword": string, "newPassword": string (>= 6) }`
+- **Responses**:
+  - 200: `{ "success": true, "message": "Password changed successfully" }`
+  - 401: `{ "detail": "Current password is incorrect" }`
+  - 422: `{ "detail": "New password must be at least 6 characters" }`
+
+### 39. Get Deposit Overview
+- **GET** `/api/admin/wallet/deposits/overview`
+- **Headers**: `Authorization: Bearer <token>`
+- **Response**:
+```json
+{
+  "total": 100,
+  "total_amount": 100000000,
+  "completed": 80,
+  "pending": 15,
+  "rejected": 5
+}
+```
+
+### 40. Reject Deposit Transaction
+- **PATCH** `/api/admin/wallet/deposits/{transaction_id}/reject`
+- **Headers**: `Authorization: Bearer <token>`
+- **Path Params**:
+  - `transaction_id` (uuid): ID của giao dịch nạp tiền
+- **Response**:
+```json
+{ "success": true, "message": "Deposit transaction rejected." }
+```
+- **Errors**:
+  - 404: `{ "detail": "Deposit transaction not found" }`
+  - 400: `{ "detail": "Only pending deposits can be rejected" }`

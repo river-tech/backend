@@ -67,7 +67,9 @@ async def admin_login(
         
         # Generate JWT token (reuse existing auth logic)
         from app.services.auth import create_access_token
-        access_token = create_access_token(data={"sub": str(admin.id)})
+        from datetime import timedelta
+        # Admin token expires in 1 hour
+        access_token = create_access_token(data={"sub": str(admin.id)}, expires_delta=timedelta(hours=1))
         
         return AdminLoginResponse(
             success=True,
@@ -121,7 +123,7 @@ async def create_admin(
         db.refresh(new_admin)
         
         return CreateAdminResponse(
-            id=new_admin.id,
+            id=str(new_admin.id),
             success=True,
             message="Admin created successfully"
         )
@@ -138,6 +140,7 @@ async def create_admin(
 # 3. GET /api/admin/settings/admins - Get all admin accounts
 @router.get("/settings/admins", response_model=List[AdminResponse])
 async def get_all_admins(
+    current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """Get all admin accounts"""
@@ -226,6 +229,13 @@ async def change_password(
 ):
     """Change admin password"""
     try:
+        # Validate new password length manually to return simple detail string
+        if password_data.newPassword is None or len(password_data.newPassword) < 6:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="New password must be at least 6 characters"
+            )
+
         # Verify current password
         if not verify_password(password_data.currentPassword, current_admin.password_hash):
             raise HTTPException(
@@ -259,11 +269,11 @@ async def get_admin_profile(
 ):
     """Get admin profile"""
     return AdminResponse(
-        id=current_admin.id,
+        id=str(current_admin.id),
         name=current_admin.name,
         email=current_admin.email,
         role=current_admin.role,
-        created_at=current_admin.created_at
+        created_at=current_admin.created_at.isoformat() if current_admin.created_at else None
     )
 
 # 7. PUT /api/admin/profile - Update admin profile

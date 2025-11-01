@@ -12,7 +12,7 @@ from app.api.auth_router import get_current_user
 
 class CategoryCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    image_url: str = Field(..., min_length=1)
+    image_url: str | None = None
 
 class CategoryCreateResponse(BaseModel):
     id: str
@@ -78,7 +78,7 @@ async def create_category(
         category = Category(
             id=uuid.uuid4(),
             name=request.name.strip(),
-            image_url=request.image_url.strip()
+            image_url=request.image_url.strip() if request.image_url else None
         )
         
         db.add(category)

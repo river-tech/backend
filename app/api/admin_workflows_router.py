@@ -40,74 +40,45 @@ async def get_current_admin(current_user: User = Depends(get_current_user)):
 
 router = APIRouter(prefix="/api/admin/workflows", tags=["Admin - Workflow Management"])
 
-# @router.get("/", response_model=dict)
-# async def get_workflows(
-#     request: AdminWorkflowListRequest,
-#     current_admin: User = Depends(get_current_admin),
-#     db: Session = Depends(get_db)
-# ):
-#     """Liệt kê tất cả workflow trong hệ thống với pagination và filter"""
-#     try:
-#         # Base query
-#         query = db.query(Workflow)
-        
-#         # Apply filters
-#         if request.search and request.search.strip():
-#             search_term = f"%{request.search.strip()}%"
-#             query = query.filter(Workflow.title.ilike(search_term))
-        
-#         if request.status:
-#             query = query.filter(Workflow.status == request.status)
-        
-#         if request.category:
-#             query = query.join(WorkflowCategory).join(Category).filter(
-#                 Category.name.ilike(f"%{request.category}%")
-#             )
-        
-#         # Get total count
-#         total_count = query.count()
-        
-#         # Apply pagination
-#         offset = (request.page - 1) * request.limit
-#         workflows = query.offset(offset).limit(request.limit).all()
-        
-#         # Build response
-#         workflows_data = []
-#         for workflow in workflows:
-#             # Get sales count and revenue
-#             purchases = db.query(Purchase).filter(
-#                 Purchase.workflow_id == workflow.id,
-#                 Purchase.status == "ACTIVE"
-#             ).all()
-            
-#             sales_count = len(purchases)
-#             revenue = sum(float(purchase.workflow.price) for purchase in purchases)
-            
-#             workflows_data.append(AdminWorkflowListResponse(
-#                 id=str(workflow.id),
-#                 title=workflow.title,
-#                 price=float(workflow.price),
-#                 status=workflow.status,
-#                 downloads_count=workflow.downloads_count,
-#                 sales_count=sales_count,
-#                 revenue=revenue
-#             ))
-        
-#         return {
-#             "workflows": workflows_data,
-#             "pagination": {
-#                 "page": request.page,
-#                 "limit": request.limit,
-#                 "total": total_count,
-#                 "pages": (total_count + request.limit - 1) // request.limit
-#             }
-#         }
-        
-#     except Exception as e:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=f"Failed to fetch workflows: {str(e)}"
-#         )
+@router.get("/", response_model=List[AdminWorkflowListResponse])
+async def list_all_workflows(
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Return all workflows (no pagination), with basic stats for admin table."""
+    try:
+        workflows = db.query(Workflow).all()
+
+        results: List[AdminWorkflowListResponse] = []
+        for wf in workflows:
+            # Sales count from ACTIVE purchases
+            sales_count = db.query(Purchase).filter(
+                Purchase.workflow_id == wf.id,
+                Purchase.status == "ACTIVE"
+            ).count()
+
+            # Categories as names list
+            category_names: List[str] = []
+            for wc in wf.categories:
+                if wc.category and wc.category.name:
+                    category_names.append(wc.category.name)
+
+            results.append(AdminWorkflowListResponse(
+                id=str(wf.id),
+                title=wf.title,
+                categories=category_names,
+                price=float(wf.price),
+                sales_count=sales_count,
+                created_at=wf.created_at.isoformat() if getattr(wf, 'created_at', None) else "",
+                status=wf.status
+            ))
+
+        return results
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch workflows: {str(e)}"
+        )
 
 @router.get("/overview", response_model=AdminWorkflowOverviewResponse)
 async def get_workflows_overview(
@@ -169,26 +140,38 @@ async def get_workflow_detail(
                 "name": wc.category.name
             })
         
-        # Get assets
-        assets = []
-        for asset in workflow.assets:
-            assets.append({
-                "id": str(asset.id),
-                "asset_url": asset.asset_url,
-                "kind": asset.kind
-            })
-        
+        # Build assets list: images only with id and url
+        image_assets: List[dict] = [
+            {"id": str(a.id), "url": a.asset_url} for a in workflow.assets if a.kind == "image"
+        ]
+        # Ensure only one video: prefer workflow.video_demo; otherwise, pick the first video asset
+        if not workflow.video_demo:
+            first_video = next((a.asset_url for a in workflow.assets if a.kind == "video"), None)
+            video_demo_url = first_video
+        else:
+            video_demo_url = workflow.video_demo
+
+        # Sales count
+        sales_count = db.query(Purchase).filter(
+            Purchase.workflow_id == workflow.id,
+            Purchase.status == "ACTIVE"
+        ).count()
+
         return AdminWorkflowDetailResponse(
             id=str(workflow.id),
             title=workflow.title,
             description=workflow.description,
             price=float(workflow.price),
+            rating=float(workflow.rating_avg) if getattr(workflow, "rating_avg", None) else None,
             features=workflow.features or [],
             time_to_setup=workflow.time_to_setup,
-            video_demo=workflow.video_demo,
+            video_demo=video_demo_url,
             flow=workflow.flow,
+            status=workflow.status,
+            created_at=workflow.created_at.isoformat() if getattr(workflow, "created_at", None) else None,
+            sales_count=sales_count,
             categories=categories,
-            assets=assets
+            assets=image_assets
         )
         
     except HTTPException:
@@ -266,102 +249,102 @@ async def create_workflow(
             detail=f"Failed to create workflow: {str(e)}"
         )
 
-@router.post("/create-with-file", response_model=AdminWorkflowCreateResponse)
-async def create_workflow_with_file(
-    title: str = Form(...),
-    description: str = Form(...),
-    price: float = Form(...),
-    features: str = Form("[]"),  # JSON string
-    time_to_setup: Optional[int] = Form(None),
-    video_demo: Optional[str] = Form(None),
-    flow_file: Optional[UploadFile] = File(None),  # JSON file upload
-    category_ids: str = Form("[]"),  # JSON string
-    current_admin: User = Depends(get_current_admin),
-    db: Session = Depends(get_db)
-):
-    """Create a new workflow with file upload for flow"""
-    try:
-        import json
+# @router.post("/create-with-file", response_model=AdminWorkflowCreateResponse)
+# async def create_workflow_with_file(
+#     title: str = Form(...),
+#     description: str = Form(...),
+#     price: float = Form(...),
+#     features: str = Form("[]"),  # JSON string
+#     time_to_setup: Optional[int] = Form(None),
+#     video_demo: Optional[str] = Form(None),
+#     flow_file: Optional[UploadFile] = File(None),  # JSON file upload
+#     category_ids: str = Form("[]"),  # JSON string
+#     current_admin: User = Depends(get_current_admin),
+#     db: Session = Depends(get_db)
+# ):
+#     """Create a new workflow with file upload for flow"""
+#     try:
+#         import json
         
-        # Parse features from JSON string
-        try:
-            features_list = json.loads(features) if features else []
-        except json.JSONDecodeError:
-            features_list = []
+#         # Parse features from JSON string
+#         try:
+#             features_list = json.loads(features) if features else []
+#         except json.JSONDecodeError:
+#             features_list = []
         
-        # Parse category_ids from JSON string
-        try:
-            category_ids_list = json.loads(category_ids) if category_ids else []
-        except json.JSONDecodeError:
-            category_ids_list = []
+#         # Parse category_ids from JSON string
+#         try:
+#             category_ids_list = json.loads(category_ids) if category_ids else []
+#         except json.JSONDecodeError:
+#             category_ids_list = []
         
-        # Parse flow from uploaded JSON file
-        flow_data = None
-        if flow_file and flow_file.filename:
-            try:
-                content = await flow_file.read()
-                flow_data = json.loads(content.decode('utf-8'))
-            except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid JSON file for flow: {str(e)}"
-                )
+#         # Parse flow from uploaded JSON file
+#         flow_data = None
+#         if flow_file and flow_file.filename:
+#             try:
+#                 content = await flow_file.read()
+#                 flow_data = json.loads(content.decode('utf-8'))
+#             except (json.JSONDecodeError, UnicodeDecodeError) as e:
+#                 raise HTTPException(
+#                     status_code=status.HTTP_400_BAD_REQUEST,
+#                     detail=f"Invalid JSON file for flow: {str(e)}"
+#                 )
         
-        # Create workflow
-        workflow = Workflow(
-            id=uuid.uuid4(),
-            title=title,
-            description=description,
-            price=price,
-            features=features_list,
-            time_to_setup=time_to_setup,
-            video_demo=video_demo,
-            flow=flow_data,
-            status="active",
-            downloads_count=0
-        )
+#         # Create workflow
+#         workflow = Workflow(
+#             id=uuid.uuid4(),
+#             title=title,
+#             description=description,
+#             price=price,
+#             features=features_list,
+#             time_to_setup=time_to_setup,
+#             video_demo=video_demo,
+#             flow=flow_data,
+#             status="active",
+#             downloads_count=0
+#         )
         
-        db.add(workflow)
-        db.flush()  # Get the ID
+#         db.add(workflow)
+#         db.flush()  # Get the ID
         
-        # Add categories
-        for category_id in category_ids_list:
-            category = db.query(Category).filter(Category.id == category_id).first()
-            if category:
-                workflow_category = WorkflowCategory(
-                    id=uuid.uuid4(),
-                    workflow_id=workflow.id,
-                    category_id=category.id
-                )
-                db.add(workflow_category)
+#         # Add categories
+#         for category_id in category_ids_list:
+#             category = db.query(Category).filter(Category.id == category_id).first()
+#             if category:
+#                 workflow_category = WorkflowCategory(
+#                     id=uuid.uuid4(),
+#                     workflow_id=workflow.id,
+#                     category_id=category.id
+#                 )
+#                 db.add(workflow_category)
         
-        # Auto-create video asset if video_demo is provided
-        if video_demo:
-            video_asset = WorkflowAsset(
-                id=uuid.uuid4(),
-                workflow_id=workflow.id,
-                kind="video",
-                asset_url=video_demo
-            )
-            db.add(video_asset)
+#         # Auto-create video asset if video_demo is provided
+#         if video_demo:
+#             video_asset = WorkflowAsset(
+#                 id=uuid.uuid4(),
+#                 workflow_id=workflow.id,
+#                 kind="video",
+#                 asset_url=video_demo
+#             )
+#             db.add(video_asset)
         
-        db.commit()
-        db.refresh(workflow)
+#         db.commit()
+#         db.refresh(workflow)
         
-        return AdminWorkflowCreateResponse(
-            id=str(workflow.id),
-            title=workflow.title,
-            success=True
-        )
+#         return AdminWorkflowCreateResponse(
+#             id=str(workflow.id),
+#             title=workflow.title,
+#             success=True
+#         )
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create workflow: {str(e)}"
-        )
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         db.rollback()
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Failed to create workflow: {str(e)}"
+#         )
 
 @router.put("/{workflow_id}", response_model=AdminWorkflowUpdateResponse)
 async def update_workflow(

@@ -9,6 +9,7 @@ from app.db.database import get_db
 from app.models.user import User
 from app.models.notification import Notification
 from app.api.auth_router import get_current_user
+from app.services.websocket_manager import manager
 
 class NotificationCreateRequest(BaseModel):
     user_id: Optional[UUID] = Field(None, description="Specific user ID. If null, send to all users")
@@ -168,11 +169,24 @@ async def create_notification(
             )
             db.add(notification)
             notifications_created = 1
+            db.commit()
+            
+            # Send WebSocket notification to specific user
+            await manager.send_personal_message({
+                "type": "notification",
+                "id": str(notification.id),
+                "title": notification.title,
+                "message": notification.message,
+                "notification_type": notification.type,
+                "is_unread": notification.is_unread,
+                "created_at": notification.created_at.isoformat() if notification.created_at else None
+            }, str(request.user_id))
             
         else:
             # Send to all users
             users = db.query(User).filter(User.role == "USER").all()
             
+            notifications_list = []
             for user in users:
                 notification = Notification(
                     id=uuid.uuid4(),
@@ -183,9 +197,22 @@ async def create_notification(
                     is_unread=True
                 )
                 db.add(notification)
+                notifications_list.append((notification, user.id))
                 notifications_created += 1
-        
-        db.commit()
+            
+            db.commit()
+            
+            # Send WebSocket notification to all users
+            for notification, user_id in notifications_list:
+                await manager.send_personal_message({
+                    "type": "notification",
+                    "id": str(notification.id),
+                    "title": notification.title,
+                    "message": notification.message,
+                    "notification_type": notification.type,
+                    "is_unread": notification.is_unread,
+                    "created_at": notification.created_at.isoformat() if notification.created_at else None
+                }, str(user_id))
         
         return NotificationCreateResponse(
             success=True,
@@ -212,6 +239,7 @@ async def broadcast_notification_to_all_users(
         # Get all users (role = "USER")
         users = db.query(User).filter(User.role == "USER").all()
         
+        notifications_list = []
         notifications_created = 0
         for user in users:
             notification = Notification(
@@ -223,9 +251,22 @@ async def broadcast_notification_to_all_users(
                 is_unread=True
             )
             db.add(notification)
+            notifications_list.append((notification, user.id))
             notifications_created += 1
         
         db.commit()
+        
+        # Send WebSocket notification to all users
+        for notification, user_id in notifications_list:
+            await manager.send_personal_message({
+                "type": "notification",
+                "id": str(notification.id),
+                "title": notification.title,
+                "message": notification.message,
+                "notification_type": notification.type,
+                "is_unread": notification.is_unread,
+                "created_at": notification.created_at.isoformat() if notification.created_at else None
+            }, str(user_id))
         
         return NotificationBroadcastResponse(
             success=True,

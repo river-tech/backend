@@ -39,3 +39,12 @@ def verify_token(token: str):
         return payload
     except jwt.PyJWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+
+def decode_access_token(token: str) -> dict:
+    """Decode JWT token without raising exception (for WebSocket)"""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        return payload
+    except jwt.PyJWTError:
+        return {}

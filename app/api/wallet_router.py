@@ -5,8 +5,10 @@ from app.models.user import User
 from app.models.wallet import Wallet, WalletTransaction
 from app.models.purchase import Purchase
 from app.models.workflow import Workflow
+from app.models.notification import Notification
 from app.models.enums import TransactionType, TransactionStatus
 from app.api.auth_router import get_current_user
+from app.services.websocket_manager import manager
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import List, Optional
 from uuid import UUID
@@ -173,6 +175,61 @@ async def create_deposit_request(
         db.add(transaction)
         db.commit()
         db.refresh(transaction)
+        
+        # Get user info for notification
+        user = db.query(User).filter(User.id == current_user.id).first()
+        
+        # Create notification and send WebSocket message to all admins
+        admins = db.query(User).filter(User.role == "ADMIN").all()
+        
+        notifications_list = []
+        for admin in admins:
+            # Create notification for admin
+            notification = Notification(
+                id=uuid.uuid4(),
+                user_id=admin.id,
+                title="New deposit request",
+                message=f"User {user.email} suggested a new deposit request of {deposit_data.amount:,.0f} VNĐ",
+                type="WARNING",
+                is_unread=True
+            )
+            db.add(notification)
+            db.flush()  # Flush to get notification.id
+            db.refresh(notification)
+            notifications_list.append((notification, admin.id))
+        
+        db.commit()
+        
+        # Send WebSocket messages after commit
+        for notification, admin_id in notifications_list:
+            await manager.send_personal_message({
+                "type": "new_deposit_request",
+                "event": "deposit_created",
+                "transaction": {
+                    "id": str(transaction.id),
+                    "status": transaction.status,
+                    "amount": float(transaction.amount),
+                    "bank_name": transaction.bank_name,
+                    "bank_account": transaction.bank_account,
+                    "transfer_code": transaction.transfer_code,
+                    "created_at": transaction.created_at.isoformat() if transaction.created_at else None
+                },
+                "user": {
+                    "id": str(user.id),
+                    "name": user.name,
+                    "email": user.email
+                },
+                "notification": {
+                    "id": str(notification.id),
+                    "title": notification.title,
+                    "message": notification.message,
+                    "type": notification.type,
+                    "is_unread": notification.is_unread,
+                    "created_at": notification.created_at.isoformat() if notification.created_at else None
+                },
+                "message": f"User {user.name} suggested a new deposit request",
+                "timestamp": transaction.created_at.isoformat() if transaction.created_at else None
+            }, str(admin_id))
         
         return DepositResponse(
             success=True,
@@ -384,6 +441,30 @@ async def admin_activate_deposit(
         
         db.commit()
         db.refresh(wallet)
+        db.refresh(transaction)
+        
+        # Send WebSocket notification to user with full transaction details
+        await manager.send_personal_message({
+            "type": "wallet_status_update",
+            "event": "deposit_activated",
+            "transaction": {
+                "id": str(transaction.id),
+                "status": transaction.status,
+                "amount": float(transaction.amount),
+                "bank_name": transaction.bank_name,
+                "bank_account": transaction.bank_account,
+                "transfer_code": transaction.transfer_code,
+                "created_at": transaction.created_at.isoformat() if transaction.created_at else None,
+                "updated_at": transaction.updated_at.isoformat() if transaction.updated_at else None
+            },
+            "wallet": {
+                "balance": float(wallet.balance),
+                "total_deposited": float(wallet.total_deposited),
+                "total_spent": float(wallet.total_spent)
+            },
+            "message": "Deposit transaction has been activated successfully",
+            "timestamp": transaction.updated_at.isoformat() if transaction.updated_at else None
+        }, str(wallet.user_id))
         
         return AdminActivateDepositResponse(
             success=True,

@@ -16,6 +16,7 @@ class NotificationResponse(BaseModel):
     message: str
     type: str
     is_unread: bool
+    created_at: str
 
 class MessageResponse(BaseModel):
     success: bool
@@ -44,7 +45,8 @@ async def get_user_notifications(
                 title=notification.title,
                 message=notification.message,
                 type=notification.type,
-                is_unread=notification.is_unread
+                is_unread=notification.is_unread,
+                created_at=notification.created_at.isoformat() if notification.created_at else None
             ))
         
         return result

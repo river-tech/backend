@@ -11,6 +11,7 @@ from app.models.enums import TransactionType, TransactionStatus
 from app.api.auth_router import get_current_user
 from app.schemas.wallet import DepositOverviewResponse
 from app.schemas.wallet import MessageResponse
+from app.services.websocket_manager import manager
 
 router = APIRouter(prefix="/api/admin/wallet", tags=["Admin - Wallet"])
 
@@ -107,9 +108,38 @@ async def reject_deposit_transaction(
         if tx.status != TransactionStatus.PENDING:
             raise HTTPException(status_code=400, detail="Only pending deposits can be rejected")
 
-        tx.status = TransactionStatus.FAILED
-        db.commit()
-        return MessageResponse(success=True, message="Deposit transaction rejected.")
+        # Get wallet and user info
+        wallet = db.query(Wallet).filter(Wallet.id == tx.wallet_id).first()
+        if wallet:
+            tx.status = TransactionStatus.FAILED
+            db.commit()
+            db.refresh(tx)
+            
+            # Send WebSocket notification to user with full transaction details
+            await manager.send_personal_message({
+                "type": "wallet_status_update",
+                "event": "deposit_rejected",
+                "transaction": {
+                    "id": str(tx.id),
+                    "status": tx.status,
+                    "amount": float(tx.amount),
+                    "bank_name": tx.bank_name,
+                    "bank_account": tx.bank_account,
+                    "transfer_code": tx.transfer_code,
+                    "created_at": tx.created_at.isoformat() if tx.created_at else None,
+                    "updated_at": tx.updated_at.isoformat() if tx.updated_at else None
+                },
+                "wallet": {
+                    "balance": float(wallet.balance),
+                    "total_deposited": float(wallet.total_deposited)
+                },
+                "message": "Deposit transaction has been rejected",
+                "timestamp": tx.updated_at.isoformat() if tx.updated_at else None
+            }, str(wallet.user_id))
+            
+            return MessageResponse(success=True, message="Deposit transaction rejected.")
+        else:
+            raise HTTPException(status_code=404, detail="Wallet not found")
     except HTTPException:
         raise
     except Exception as e:

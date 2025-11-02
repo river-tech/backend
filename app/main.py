@@ -17,6 +17,7 @@ from app.api.admin_notifications_router import router as admin_notifications_rou
 from app.api.admin_categories_router import router as admin_categories_router
 from app.api.admin_wallet_router import router as admin_wallet_router
 from app.api.wallet_router import router as wallet_router
+from app.api.websocket_router import router as websocket_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -45,6 +46,7 @@ app.include_router(admin_purchases_router, tags=["Admin - Purchase Management"])
 app.include_router(admin_notifications_router, tags=["Admin - Notifications"])
 app.include_router(admin_categories_router, tags=["Admin - Categories"])
 app.include_router(admin_wallet_router, tags=["Admin - Wallet"])
+app.include_router(websocket_router, tags=["WebSocket"])
 
 
 @app.get("/")

@@ -355,15 +355,19 @@ async def get_workflow_detail(
             id=str(workflow.id),
             title=workflow.title,
             description=workflow.description,
-            category=categories,
-            images=images,
+            categories=categories,
+            image_urls=images,
             features=workflow.features or [],
             rating_avg=float(workflow.rating_avg) if workflow.rating_avg else None,
-            rating_count=rating_count,
             downloads_count=workflow.downloads_count,
             wishlist_count=wishlist_count,
             price=float(workflow.price),
+            status=workflow.status,
             time_to_setup=workflow.time_to_setup,
+            # video_demo=workflow.video_demo,
+            # flow=workflow.flow,
+            created_at=workflow.created_at.isoformat() if workflow.created_at else None,
+            updated_at=workflow.updated_at.isoformat() if workflow.updated_at else None,
             is_like=is_like,
             is_buy=is_buy
         )
@@ -731,18 +735,38 @@ async def get_workflow_full_detail(
             )
         
         categories = [wc.category.name for wc in workflow.categories]
-        document_assets = [asset.asset_url for asset in workflow.assets if asset.kind == "doc"]
+        image_urls = [asset.asset_url for asset in workflow.assets if asset.kind == "image"]
+        
+        # Check if current user has liked this workflow
+        is_like = False
+        favorite = db.query(Favorite)\
+            .filter(Favorite.workflow_id == workflow_id, Favorite.user_id == current_user.id)\
+            .first()
+        if favorite:
+            is_like = True
+        
+        # User has purchased, so is_buy should be True
+        is_buy = True
         
         return WorkflowResponse(
             id=str(workflow.id),
             title=workflow.title,
-            category=categories,
+            description=workflow.description,
+            price=float(workflow.price),
             status=workflow.status,
-            purchased_at=purchase.paid_at,
-            video_demo_url=workflow.video_demo,
-            last_updated=workflow.updated_at,
-            document=document_assets[0] if document_assets else None,
-            flow=workflow.flow
+            features=workflow.features or [],
+            downloads_count=workflow.downloads_count or 0,
+            wishlist_count=len(workflow.favorites),
+            time_to_setup=workflow.time_to_setup,
+            video_demo=workflow.video_demo,
+            flow=workflow.flow,
+            rating_avg=float(workflow.rating_avg) if workflow.rating_avg else None,
+            created_at=workflow.created_at.isoformat() if workflow.created_at else None,
+            updated_at=workflow.updated_at.isoformat() if workflow.updated_at else None,
+            categories=categories,
+            image_urls=image_urls,
+            is_like=is_like,
+            is_buy=is_buy
         )
     except HTTPException:
         raise

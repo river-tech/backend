@@ -18,6 +18,8 @@ from app.api.admin_categories_router import router as admin_categories_router
 from app.api.admin_wallet_router import router as admin_wallet_router
 from app.api.wallet_router import router as wallet_router
 from app.api.websocket_router import router as websocket_router
+from app.api.webhook_router import router as webhook_router
+from app.api.deposit_router import router as deposit_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -47,6 +49,8 @@ app.include_router(admin_notifications_router, tags=["Admin - Notifications"])
 app.include_router(admin_categories_router, tags=["Admin - Categories"])
 app.include_router(admin_wallet_router, tags=["Admin - Wallet"])
 app.include_router(websocket_router, tags=["WebSocket"])
+app.include_router(webhook_router, tags=["Webhook"])
+app.include_router(deposit_router, tags=["Wallet - Deposit Init"])
 
 
 @app.get("/")
